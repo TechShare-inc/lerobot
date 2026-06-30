@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from lerobot.datasets.transforms import ImageTransformsConfig
 from lerobot.datasets.video_utils import get_safe_default_codec
 
+DEFAULT_LOCAL_DATASET_REPO_ID = "local/dataset"
+
 
 @dataclass
 class DatasetConfig:
@@ -26,7 +28,7 @@ class DatasetConfig:
     # keys common between the datasets are kept. Each dataset gets and additional transform that inserts the
     # "dataset_index" into the returned item. The index mapping is made according to the order in which the
     # datasets are provided.
-    repo_id: str
+    repo_id: str = DEFAULT_LOCAL_DATASET_REPO_ID
     # Root directory for a concrete local dataset tree (e.g. 'dataset/path'). If None, local datasets are
     # looked up under $HF_LEROBOT_HOME/repo_id and Hub downloads use a revision-safe cache under $HF_LEROBOT_HOME/hub.
     root: str | None = None
@@ -38,6 +40,12 @@ class DatasetConfig:
     streaming: bool = False
 
     def __post_init__(self) -> None:
+        if self.repo_id == DEFAULT_LOCAL_DATASET_REPO_ID and self.root is None:
+            raise ValueError(
+                "dataset.root must be provided when using the default local dataset repo_id. "
+                "Set dataset.repo_id explicitly to load a dataset from the Hub."
+            )
+
         if self.episodes is not None:
             if any(ep < 0 for ep in self.episodes):
                 raise ValueError(
