@@ -217,6 +217,8 @@ class PreTrainedConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):  # type: igno
             config = json.load(f)
 
         config.pop("type")
+        config.pop("push_to_hub", None)
+        config.pop("repo_id", None)
         with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as f:
             json.dump(config, f)
             config_file = f.name

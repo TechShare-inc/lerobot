@@ -138,9 +138,6 @@ class TrainPipelineConfig(HubMixin):
             self.optimizer = self.policy.get_optimizer_preset()
             self.scheduler = self.policy.get_scheduler_preset()
 
-        if self.policy.push_to_hub and not self.policy.repo_id:
-            self.policy.push_to_hub = False
-
         if self.use_rabc and not self.rabc_progress_path:
             # Auto-detect from dataset path
             repo_id = self.dataset.repo_id
