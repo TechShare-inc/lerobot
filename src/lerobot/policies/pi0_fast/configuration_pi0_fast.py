@@ -31,7 +31,7 @@ DEFAULT_IMAGE_SIZE = 224
 class PI0FastConfig(PreTrainedConfig):
     paligemma_variant: str = "gemma_2b"
     action_expert_variant: str = "gemma_300m"
-    dtype: str = "float32"  # Options: "bfloat16", "float32"
+    dtype: str = "bfloat16"  # Options: "bfloat16", "float32"
 
     chunk_size: int = 50  # Number of action steps to predict, in openpi called "action_horizon"
     n_action_steps: int = 50  # Number of action steps to execute
