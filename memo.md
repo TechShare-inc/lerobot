@@ -130,3 +130,18 @@ Postprocessor
 
 
 
+CLI引数
+  ↓
+TrainPipelineConfig
+  ↓
+LeRobotDataset v3
+  ↓
+Policy生成
+  ↓
+Preprocessor / Postprocessor生成
+  ↓
+DataLoader
+  ↓
+学習ループ
+  ↓
+Checkpoint保存
