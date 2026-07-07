@@ -287,6 +287,13 @@ def train(cfg: TrainPipelineConfig, accelerator: Accelerator | None = None):
         processor_kwargs["preprocessor_overrides"]["rename_observations_processor"] = {
             "rename_map": cfg.rename_map
         }
+        if cfg.policy.type == "pi0_fast":
+            processor_kwargs["preprocessor_overrides"]["action_tokenizer_processor"] = {
+                "action_tokenizer_name": cfg.policy.action_tokenizer_name,
+                "max_action_tokens": cfg.policy.max_action_tokens,
+                "fast_skip_tokens": cfg.policy.fast_skip_tokens,
+                "paligemma_tokenizer_name": cfg.policy.text_tokenizer_name,
+            }
         postprocessor_kwargs["postprocessor_overrides"] = {
             "unnormalizer_processor": {
                 "stats": dataset.meta.stats,
