@@ -80,7 +80,7 @@ def to_absolute_actions(actions: Tensor, state: Tensor, mask: Sequence[bool]) ->
     actions[..., :dims] += state_offset
     return actions
 
-
+@ProcessorStepRegistry.register("relative_actions_processor")
 @ProcessorStepRegistry.register("delta_actions_processor")
 @dataclass
 class RelativeActionsProcessorStep(ProcessorStep):
