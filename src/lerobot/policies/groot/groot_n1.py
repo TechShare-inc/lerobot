@@ -366,7 +366,7 @@ class GR00TN15(PreTrainedModel):
             local_model_path = pretrained_model_name_or_path
 
         pretrained_model = super().from_pretrained(
-            local_model_path, local_model_path=local_model_path, **kwargs
+            local_model_path, local_model_path=local_model_path, low_cpu_mem_usage=False, **kwargs
         )
 
         pretrained_model.backbone.set_trainable_parameters(tune_visual=tune_visual, tune_llm=tune_llm)
