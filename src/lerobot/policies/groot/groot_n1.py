@@ -195,6 +195,8 @@ class GR00TN15Config(PretrainedConfig):
 class GR00TN15(PreTrainedModel):
     supports_gradient_checkpointing = True
     config_class = GR00TN15Config
+    # debug AttributeError: 'GR00TN15' object has no attribute 'all_tied_weights_keys'. Did you mean: '_tied_weights_keys'?
+    all_tied_weights_keys = {}
     """
     we expect the backbone output to have a key 'backbone_features' with shape (batch_size, n, hidden_size)
     here n is variable and can be e.g. time, 1 or user specified
@@ -366,7 +368,7 @@ class GR00TN15(PreTrainedModel):
             local_model_path = pretrained_model_name_or_path
 
         pretrained_model = super().from_pretrained(
-            local_model_path, local_model_path=local_model_path, low_cpu_mem_usage=False, **kwargs
+            local_model_path, local_model_path=local_model_path, **kwargs
         )
 
         pretrained_model.backbone.set_trainable_parameters(tune_visual=tune_visual, tune_llm=tune_llm)

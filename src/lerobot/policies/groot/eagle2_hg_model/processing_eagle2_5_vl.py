@@ -220,6 +220,8 @@ class Eagle25VLProcessor(ProcessorMixin):
                     image_inputs = self.image_processor(
                         images=[image_list[idx_in_list]],
                         videos=None,
+                        # Force tensor output because replace_media_placeholder expects pixel_values.shape.
+                        return_tensors="pt",
                         **output_kwargs["images_kwargs"],
                     )
                     num_all_tiles = image_inputs["pixel_values"].shape[0]
@@ -231,6 +233,8 @@ class Eagle25VLProcessor(ProcessorMixin):
                     video_inputs = self.image_processor(
                         images=None,
                         videos=[video_list[idx_in_list]],
+                        # Force tensor output because replace_media_placeholder expects pixel_values.shape.
+                        return_tensors="pt",
                         **output_kwargs["videos_kwargs"],
                     )
                     num_all_tiles = video_inputs["pixel_values"].shape[0]

@@ -205,7 +205,8 @@ class FlowmatchingActionHead(nn.Module):
             self.position_embedding = nn.Embedding(config.max_seq_len, self.input_embedding_dim)
             nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.02)
 
-        self.beta_dist = Beta(config.noise_beta_alpha, config.noise_beta_beta)
+        # debug RuntimeError: Tensor.item() cannot be called on meta tensors
+        self.beta_dist = Beta(config.noise_beta_alpha, config.noise_beta_beta, validate_args=False,)
         self.num_timestep_buckets = config.num_timestep_buckets
         self.config = config
         self.set_trainable_parameters(config.tune_projector, config.tune_diffusion_model)
@@ -249,8 +250,14 @@ class FlowmatchingActionHead(nn.Module):
             if not self.tune_diffusion_model:
                 self.model.eval()
 
+    # Beta を実行時生成するため
     def sample_time(self, batch_size, device, dtype):
-        sample = self.beta_dist.sample([batch_size]).to(device, dtype=dtype)
+        beta_dist = Beta(
+            torch.tensor(self.config.noise_beta_alpha, device=device, dtype=torch.float32),
+            torch.tensor(self.config.noise_beta_beta, device=device, dtype=torch.float32),
+            validate_args=False,
+        )
+        sample = beta_dist.sample([batch_size])
         return (self.config.noise_s - sample) / self.config.noise_s
 
     def prepare_input(self, batch: dict) -> BatchFeature:
