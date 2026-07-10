@@ -6,7 +6,7 @@ GR00T N1.7 model card: https://huggingface.co/nvidia/GR00T-N1.7-3B
 
 GR00T N1.5 research page (earlier version): https://research.nvidia.com/labs/gear/gr00t-n1_5/
 
-> GR00T N1.5 support was removed from LeRobot; the last release supporting it is `lerobot==0.5.1`.
+> GR00T N1.5 support was removed from LeRobot; the last release supporting it is `lerobot==0.6.0`.
 > Current releases support GR00T N1.7 only.
 
 ## Repository

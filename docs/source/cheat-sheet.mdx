@@ -163,7 +163,7 @@ lerobot-train --config_path=${HF_USER}/policy_test --resume=true --job.target=a1
 Inference means running the trained policy/model on a robot. For that we use `lerobot-rollout`. You will need to provide a path to your policy. It can be a local path or a path to Hugging Face for example "lerobot/folding_latest". Your cameras configuration needs to match what was used when collecting the dataset. Duration is in seconds if unspecified, it will run forever.
 
 > [!TIP]
-> If you are using the previous release V0.5.1 instead of `lerobot-rollout` you need to use `lerobot-record`. More information [here](https://huggingface.co/docs/lerobot/v0.5.1/en/il_robots#run-inference-and-evaluate-your-policy).
+> If you are using the previous release V0.6.0 instead of `lerobot-rollout` you need to use `lerobot-record`. More information [here](https://huggingface.co/docs/lerobot/v0.6.0/en/il_robots#run-inference-and-evaluate-your-policy).
 
 ```bash
 lerobot-rollout \
