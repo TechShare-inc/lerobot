@@ -22,6 +22,7 @@ import torch
 from torch import Tensor
 
 from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.policies.utils import log_model_loading_keys
 from lerobot.utils.constants import OBS_STATE
 from lerobot.utils.import_utils import require_package
 
@@ -112,15 +113,22 @@ class FastWAMPolicy(PreTrainedPolicy):
                 ):
                     mismatched.append(key)
 
+        from safetensors.torch import load_file
+
+        state_dict = load_file(model_file, device="cpu")
+
         if not mismatched:
-            return super()._load_as_safetensor(model, model_file, map_location, strict)
+            missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=strict)
+            log_model_loading_keys(missing_keys, unexpected_keys)
+            if map_location and map_location != "cpu":
+                model.to(map_location)
+            return model
+
         if strict:
             raise RuntimeError(
                 f"FastWAM: {len(mismatched)} checkpoint tensors have a shape mismatch under "
                 f"strict=True: {mismatched}"
             )
-
-        from safetensors.torch import load_file
 
         logging.warning(
             "FastWAM cross-embodiment load: reinitializing %d shape-mismatched tensor(s), keeping "
@@ -128,10 +136,10 @@ class FastWAMPolicy(PreTrainedPolicy):
             len(mismatched),
             mismatched,
         )
-        state_dict = load_file(model_file, device="cpu")
         for key in mismatched:
             state_dict.pop(key, None)
-        model.load_state_dict(state_dict, strict=False)
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+        log_model_loading_keys(missing_keys, unexpected_keys)
         if map_location and map_location != "cpu":
             model.to(map_location)
         return model
