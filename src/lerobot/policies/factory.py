@@ -270,6 +270,34 @@ class ProcessorConfigKwargs(TypedDict, total=False):
     dataset_meta: Any | None
 
 
+def _with_pi0_fast_preprocessor_overrides(
+    policy_cfg: PreTrainedConfig,
+    preprocessor_overrides: dict[str, Any] | None,
+) -> dict[str, Any]:
+    overrides = dict(preprocessor_overrides or {})
+    if getattr(policy_cfg, "type", None) != "pi0_fast":
+        return overrides
+
+    action_tokenizer_overrides = {
+        "action_tokenizer_name": getattr(policy_cfg, "action_tokenizer_name", None),
+        "max_action_tokens": getattr(policy_cfg, "max_action_tokens", None),
+        "fast_skip_tokens": getattr(policy_cfg, "fast_skip_tokens", None),
+        "paligemma_tokenizer_name": getattr(policy_cfg, "text_tokenizer_name", None),
+    }
+    action_tokenizer_overrides = {
+        key: value for key, value in action_tokenizer_overrides.items() if value is not None
+    }
+    if not action_tokenizer_overrides:
+        return overrides
+
+    current_action_tokenizer_overrides = overrides.get("action_tokenizer_processor", {})
+    overrides["action_tokenizer_processor"] = {
+        **action_tokenizer_overrides,
+        **current_action_tokenizer_overrides,
+    }
+    return overrides
+
+
 def make_pre_post_processors(
     policy_cfg: PreTrainedConfig,
     pretrained_path: str | None = None,
@@ -320,12 +348,16 @@ def make_pre_post_processors(
                 ),
             )
 
+        preprocessor_overrides = _with_pi0_fast_preprocessor_overrides(
+            policy_cfg, kwargs.get("preprocessor_overrides")
+        )
+
         preprocessor = PolicyProcessorPipeline.from_pretrained(
             pretrained_model_name_or_path=pretrained_path,
             config_filename=kwargs.get(
                 "preprocessor_config_filename", f"{POLICY_PREPROCESSOR_DEFAULT_NAME}.json"
             ),
-            overrides=kwargs.get("preprocessor_overrides", {}),
+            overrides=preprocessor_overrides,
             to_transition=batch_to_transition,
             to_output=transition_to_batch,
             revision=pretrained_revision,
