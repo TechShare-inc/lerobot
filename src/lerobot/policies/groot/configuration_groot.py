@@ -38,7 +38,7 @@ GROOT_N1_5 = "n1.5"
 GROOT_N1_5_REMOVAL_GUIDANCE = (
     "GR00T N1.5 support was removed from LeRobot. "
     "To keep using an N1.5 checkpoint, pin the last release that supports it: "
-    "`pip install 'lerobot==0.6.0'`. To use the current release, migrate to GR00T N1.7 "
+    "`pip install 'lerobot==0.5.1'`. To use the current release, migrate to GR00T N1.7 "
     "(model_version='n1.7', base model nvidia/GR00T-N1.7-3B)."
 )
 GROOT_N1_7_BASE_MODEL = "nvidia/GR00T-N1.7-3B"
