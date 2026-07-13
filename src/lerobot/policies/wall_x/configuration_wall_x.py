@@ -62,6 +62,15 @@ class WallXConfig(PreTrainedConfig):
     # NOTE: flash-attn==2.7.4.post1 is required for flash_attention_2 implementation
     attn_implementation: str = "eager"
 
+    # ==================== PEFT / LoRA ====================
+    # Wall-X is too large for practical full fine-tuning on many local GPUs.
+    # These options are consumed by Qwen2_5_VLMoEForAction.add_lora().
+    use_lora: bool = False
+    lora_r: int = 8
+    lora_alpha: int = 32
+    lora_dropout: float = 0.1
+    lora_target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+
     # ==================== Optimizer Presets ====================
     optimizer_lr: float = 2e-5
     optimizer_betas: tuple[float, float] = (0.9, 0.95)
