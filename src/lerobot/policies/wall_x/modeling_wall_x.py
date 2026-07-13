@@ -1750,6 +1750,13 @@ class WallXPolicy(PreTrainedPolicy):
             action_tokenizer_path=config.action_tokenizer_path,
             attn_implementation=config.attn_implementation,
         )
+        if config.use_lora:
+            self.model.add_lora(
+                r=config.lora_r,
+                lora_alpha=config.lora_alpha,
+                target_modules=config.lora_target_modules,
+                lora_dropout=config.lora_dropout,
+            )
         self.model.to(config.device)
         self.model.to_bfloat16_for_selected_params()
 
