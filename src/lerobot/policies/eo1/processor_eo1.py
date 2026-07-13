@@ -50,6 +50,7 @@ if TYPE_CHECKING or _transformers_available:
 else:
     Qwen2_5_VLProcessor = None
 
+
 SYSTEM_MESSAGE = "You are a helpful physical assistant."
 
 # EO-1 special tokens
@@ -195,16 +196,24 @@ class EO1QwenProcessorStep(ComplementaryDataProcessorStep):
         # Supervised batches use right padding to match standard training collation.
         padding_side = "right" if self.transition.get(TransitionKey.ACTION) is not None else "left"
 
+        processor_kwargs = {
+            "text_kwargs": {
+                "padding": True,
+                "padding_side": padding_side,
+            },
+            "images_kwargs": {
+                "min_pixels": self.image_min_pixels,
+                "max_pixels": self.image_max_pixels,
+            },
+        }
+
         inputs = self._processor.apply_chat_template(
             messages,
             tokenize=True,
-            padding=True,
-            padding_side=padding_side,
-            min_pixels=self.image_min_pixels,
-            max_pixels=self.image_max_pixels,
             add_generation_prompt=False,
             return_dict=True,
             return_tensors="pt",
+            processor_kwargs=processor_kwargs,
         )
 
         complementary_data["input_ids"] = inputs["input_ids"]
