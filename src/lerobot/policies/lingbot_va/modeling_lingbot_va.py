@@ -93,6 +93,7 @@ class LingBotVAPolicy(PreTrainedPolicy):
         )
         # Run the transformer in config.dtype (bf16); norm/modulation paths upcast to fp32 internally.
         self.transformer = self.transformer.to(self.dtype)
+        self._apply_trainable_last_layers()
 
         # Frozen modules are stored OUTSIDE the nn.Module registry (plain dict) so they are
         # neither saved into model.safetensors nor moved by ``.to()``. They are lazily loaded
@@ -149,6 +150,28 @@ class LingBotVAPolicy(PreTrainedPolicy):
         # Only the transformer is trainable; the VAE / text encoder stay frozen (kept outside the
         # nn.Module registry). With PEFT/LoRA this naturally returns just the adapter params.
         return [p for p in self.transformer.parameters() if p.requires_grad]
+
+    def _apply_trainable_last_layers(self) -> None:
+        n_layers = self.config.trainable_last_n_layers
+        if n_layers <= 0:
+            return
+
+        for param in self.transformer.parameters():
+            param.requires_grad = False
+
+        if n_layers > len(self.transformer.blocks):
+            n_layers = len(self.transformer.blocks)
+        trainable_modules = [
+            *self.transformer.blocks[-n_layers:],
+            self.transformer.norm_out,
+            self.transformer.proj_out,
+            self.transformer.action_proj_out,
+        ]
+
+        for module in trainable_modules:
+            for param in module.parameters():
+                param.requires_grad = True
+        self.transformer.scale_shift_table.requires_grad = True
 
     def reset(self):
         """Reset all per-episode streaming state (KV cache, queues, frame counter)."""

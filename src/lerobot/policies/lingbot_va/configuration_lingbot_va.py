@@ -53,6 +53,9 @@ class LingBotVAConfig(PreTrainedConfig):
     rope_max_seq_len: int = 1024
     # "flex" = training only (needs recent torch); inference uses "torch" SDPA or "flashattn".
     attn_mode: str = "torch"
+    # If > 0, fine-tune only the last N transformer blocks plus output heads.
+    # Full fine-tuning of the 5B transformer usually needs more than 32 GB VRAM.
+    trainable_last_n_layers: int = 0
 
     # Frozen sub-models (VAE + UMT5 text encoder + tokenizer)
     # ~20 GB of frozen weights, NOT bundled in the checkpoint; lazily pulled from this HF repo /
