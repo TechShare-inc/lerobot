@@ -83,6 +83,9 @@ class EO1Policy(PreTrainedPolicy):
             )
 
         self.model = EO1VisionFlowMatchingModel(config, vlm_backbone)
+        if config.freeze_vlm_backbone:
+            for param in self.model.vlm_backbone.parameters():
+                param.requires_grad_(False)
         if config.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
 
