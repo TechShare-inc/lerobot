@@ -215,6 +215,10 @@ class EO1QwenProcessorStep(ComplementaryDataProcessorStep):
             return_tensors="pt",
             processor_kwargs=processor_kwargs,
         )
+        inputs = {
+            key: value if isinstance(value, torch.Tensor) else torch.as_tensor(value)
+            for key, value in inputs.items()
+        }
 
         complementary_data["input_ids"] = inputs["input_ids"]
         complementary_data["pixel_values"] = inputs["pixel_values"]
