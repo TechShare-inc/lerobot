@@ -507,7 +507,6 @@ class Qwen2_5_VLMoEForAction(_Qwen2_5_VLForAction_Base):
             target_modules=target_modules,
             lora_dropout=lora_dropout,
             bias="none",
-            task_type="CAUSAL_LM",
         )
         self.model = get_peft_model(self.model, config)
 
