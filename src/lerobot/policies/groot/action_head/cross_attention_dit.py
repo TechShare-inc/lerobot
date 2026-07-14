@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F  # noqa: N812
+import torch.utils.checkpoint
 from torch import nn
 
 from lerobot.utils.import_utils import _diffusers_available, require_package
@@ -45,6 +46,10 @@ else:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _checkpoint_block(block, *args):
+    return torch.utils.checkpoint.checkpoint(block, *args, use_reentrant=False)
 
 
 class TimestepEncoder(nn.Module):
@@ -290,27 +295,34 @@ class DiT(ModelMixin, ConfigMixin):
         hidden_states = hidden_states.contiguous()
         encoder_hidden_states = encoder_hidden_states.contiguous()
 
-        all_hidden_states = [hidden_states]
+        all_hidden_states = [hidden_states] if return_all_hidden_states else None
 
         # Process through transformer blocks
         for idx, block in enumerate(self.transformer_blocks):
             if idx % 2 == 1 and self.config.interleave_self_attention:
-                hidden_states = block(
-                    hidden_states,
-                    attention_mask=None,
-                    encoder_hidden_states=None,
-                    encoder_attention_mask=None,
-                    temb=temb,
-                )
+                if self.training and self.gradient_checkpointing and not return_all_hidden_states:
+                    hidden_states = _checkpoint_block(block, hidden_states, None, None, None, temb)
+                else:
+                    hidden_states = block(
+                        hidden_states,
+                        attention_mask=None,
+                        encoder_hidden_states=None,
+                        encoder_attention_mask=None,
+                        temb=temb,
+                    )
             else:
-                hidden_states = block(
-                    hidden_states,
-                    attention_mask=None,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=None,
-                    temb=temb,
-                )
-            all_hidden_states.append(hidden_states)
+                if self.training and self.gradient_checkpointing and not return_all_hidden_states:
+                    hidden_states = _checkpoint_block(block, hidden_states, None, encoder_hidden_states, None, temb)
+                else:
+                    hidden_states = block(
+                        hidden_states,
+                        attention_mask=None,
+                        encoder_hidden_states=encoder_hidden_states,
+                        encoder_attention_mask=None,
+                        temb=temb,
+                    )
+            if all_hidden_states is not None:
+                all_hidden_states.append(hidden_states)
 
         # Output processing
         conditioning = temb
@@ -351,33 +363,47 @@ class AlternateVLDiT(DiT):
         image_attention_mask = image_mask & backbone_attention_mask
         non_image_attention_mask = (~image_mask) & backbone_attention_mask
 
-        all_hidden_states = [hidden_states]
+        all_hidden_states = [hidden_states] if return_all_hidden_states else None
         if not self.config.interleave_self_attention:
             raise ValueError("AlternateVLDiT requires interleave_self_attention=True.")
 
         for idx, block in enumerate(self.transformer_blocks):
             if idx % 2 == 1:
-                hidden_states = block(
-                    hidden_states,
-                    attention_mask=None,
-                    encoder_hidden_states=None,
-                    encoder_attention_mask=None,
-                    temb=temb,
-                )
+                if self.training and self.gradient_checkpointing and not return_all_hidden_states:
+                    hidden_states = _checkpoint_block(block, hidden_states, None, None, None, temb)
+                else:
+                    hidden_states = block(
+                        hidden_states,
+                        attention_mask=None,
+                        encoder_hidden_states=None,
+                        encoder_attention_mask=None,
+                        temb=temb,
+                    )
             else:
                 curr_encoder_attention_mask = (
                     non_image_attention_mask
                     if idx % (2 * self.attend_text_every_n_blocks) == 0
                     else image_attention_mask
                 )
-                hidden_states = block(
-                    hidden_states,
-                    attention_mask=None,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=curr_encoder_attention_mask,
-                    temb=temb,
-                )
-            all_hidden_states.append(hidden_states)
+                if self.training and self.gradient_checkpointing and not return_all_hidden_states:
+                    hidden_states = _checkpoint_block(
+                        block,
+                        hidden_states,
+                        None,
+                        encoder_hidden_states,
+                        curr_encoder_attention_mask,
+                        temb,
+                    )
+                else:
+                    hidden_states = block(
+                        hidden_states,
+                        attention_mask=None,
+                        encoder_hidden_states=encoder_hidden_states,
+                        encoder_attention_mask=curr_encoder_attention_mask,
+                        temb=temb,
+                    )
+            if all_hidden_states is not None:
+                all_hidden_states.append(hidden_states)
 
         conditioning = temb
         shift, scale = self.proj_out_1(F.silu(conditioning)).chunk(2, dim=1)
@@ -443,12 +469,16 @@ class SelfAttentionTransformer(ModelMixin, ConfigMixin):
     ):
         # Process through transformer blocks - single pass through the blocks
         hidden_states = hidden_states.contiguous()
-        all_hidden_states = [hidden_states]
+        all_hidden_states = [hidden_states] if return_all_hidden_states else None
 
         # Process through transformer blocks
         for _idx, block in enumerate(self.transformer_blocks):
-            hidden_states = block(hidden_states)
-            all_hidden_states.append(hidden_states)
+            if self.training and self.gradient_checkpointing and not return_all_hidden_states:
+                hidden_states = _checkpoint_block(block, hidden_states)
+            else:
+                hidden_states = block(hidden_states)
+            if all_hidden_states is not None:
+                all_hidden_states.append(hidden_states)
 
         if return_all_hidden_states:
             return hidden_states, all_hidden_states

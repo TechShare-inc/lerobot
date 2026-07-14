@@ -343,6 +343,8 @@ class GrootConfig(PreTrainedConfig):
     optimizer_weight_decay: float = 1e-5
     warmup_ratio: float = 0.05
     use_bf16: bool = True
+    # Recompute action-head transformer activations during backward to reduce peak VRAM.
+    gradient_checkpointing: bool = False
     # The native N1.7 fine-tuning recipe keeps model parameters in FP32 and computes under BF16 autocast.
     model_params_fp32: bool = True
 
