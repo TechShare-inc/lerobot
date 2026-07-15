@@ -86,7 +86,6 @@ GR00T_N1_7_DEFAULTS: dict[str, Any] = {
     "select_layer": 16,
     "reproject_vision": False,
     "use_flash_attention": False,
-    "gradient_checkpointing": False,
     "load_bf16": False,
     "backbone_trainable_params_fp32": True,
     "image_crop_size": N1_7_DEFAULT_IMAGE_CROP_SIZE,
@@ -516,8 +515,6 @@ class GR00TN17ActionHead(nn.Module):
         self._noise_beta_beta = config.noise_beta_beta
         self._beta_dist = None
         self.num_timestep_buckets = config.num_timestep_buckets
-        if hasattr(self.model, "gradient_checkpointing"):
-            self.model.gradient_checkpointing = bool(config.gradient_checkpointing)
         self.set_trainable_parameters(config.tune_projector, config.tune_diffusion_model, config.tune_vlln)
 
     def set_trainable_parameters(
