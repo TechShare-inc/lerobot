@@ -71,16 +71,27 @@ from lerobot.utils.utils import (
 from .lerobot_eval import eval_policy_all
 
 
+def _infer_batch_size(batch: Any) -> int:
+    if isinstance(batch, dict):
+        for value in batch.values():
+            if isinstance(value, torch.Tensor) and value.ndim > 0:
+                return int(value.shape[0])
+    if isinstance(batch, torch.Tensor) and batch.ndim > 0:
+        return int(batch.shape[0])
+    return 1
+
+
 def update_policy(
     train_metrics: MetricsTracker,
     policy: PreTrainedPolicy,
-    batch: Any,
+    batches: list[Any],
     optimizer: Optimizer,
     grad_clip_norm: float,
     accelerator: "Accelerator",
     lr_scheduler=None,
     lock=None,
     sample_weighter=None,
+    gradient_accumulation_steps: int = 1,
 ) -> tuple[MetricsTracker, dict | None]:
     """
     Performs a single training step to update the policy's weights.
@@ -91,13 +102,14 @@ def update_policy(
     Args:
         train_metrics: A MetricsTracker instance to record training statistics.
         policy: The policy model to be trained.
-        batch: A batch of training data.
+        batches: Micro-batches of training data to accumulate into one optimizer update.
         optimizer: The optimizer used to update the policy's parameters.
         grad_clip_norm: The maximum norm for gradient clipping.
         accelerator: The Accelerator instance for distributed training and mixed precision.
         lr_scheduler: An optional learning rate scheduler.
         lock: An optional lock for thread-safe optimizer updates.
         sample_weighter: Optional SampleWeighter instance for per-sample loss weighting.
+        gradient_accumulation_steps: Number of micro-batches accumulated per optimizer update.
 
     Returns:
         A tuple containing:
@@ -110,38 +122,56 @@ def update_policy(
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    # Compute sample weights if a weighter is provided
-    sample_weights = None
-    weight_stats = None
-    if sample_weighter is not None:
-        sample_weights, weight_stats = sample_weighter.compute_batch_weights(batch)
+    optimizer.zero_grad()
+    total_loss = 0.0
+    output_dict = None
+    n_micro_batches = len(batches)
+    micro_batch_sizes = [_infer_batch_size(batch) for batch in batches]
+    total_micro_batch_size = sum(micro_batch_sizes)
 
-    # Let accelerator handle mixed precision
-    with accelerator.autocast():
-        if sample_weights is not None:
-            # Use per-sample loss for weighted training
-            # Note: Policies supporting sample weighting must implement forward(batch, reduction="none")
-            per_sample_loss, output_dict = policy.forward(batch, reduction="none")
+    for micro_step, (batch, micro_batch_size) in enumerate(zip(batches, micro_batch_sizes, strict=True)):
+        is_last_micro_step = micro_step == n_micro_batches - 1
 
-            # Weighted loss: each sample's contribution is scaled by its weight.
-            # We divide by weight sum (not batch size) so that if some weights are zero,
-            # the remaining samples contribute proportionally more, preserving gradient scale.
-            # Weights are pre-normalized to sum to batch_size for stable training dynamics.
-            epsilon = 1e-6
-            loss = (per_sample_loss * sample_weights).sum() / (sample_weights.sum() + epsilon)
+        # Compute sample weights if a weighter is provided
+        sample_weights = None
+        weight_stats = None
+        if sample_weighter is not None:
+            sample_weights, weight_stats = sample_weighter.compute_batch_weights(batch)
 
-            # Log weighting statistics
-            if output_dict is None:
-                output_dict = {}
-            for key, value in weight_stats.items():
-                output_dict[f"sample_weight_{key}"] = value
-        else:
-            loss, output_dict = policy.forward(batch)
+        sync_context = nullcontext()
+        if gradient_accumulation_steps > 1 and not is_last_micro_step:
+            sync_context = accelerator.no_sync(policy)
 
-        # TODO(rcadene): policy.unnormalize_outputs(out_dict)
+        with sync_context:
+            # Let accelerator handle mixed precision
+            with accelerator.autocast():
+                if sample_weights is not None:
+                    # Use per-sample loss for weighted training
+                    # Note: Policies supporting sample weighting must implement forward(batch, reduction="none")
+                    per_sample_loss, output_dict = policy.forward(batch, reduction="none")
 
-    # Use accelerator's backward method
-    accelerator.backward(loss)
+                    # Weighted loss: each sample's contribution is scaled by its weight.
+                    # We divide by weight sum (not batch size) so that if some weights are zero,
+                    # the remaining samples contribute proportionally more, preserving gradient scale.
+                    # Weights are pre-normalized to sum to batch_size for stable training dynamics.
+                    epsilon = 1e-6
+                    loss = (per_sample_loss * sample_weights).sum() / (sample_weights.sum() + epsilon)
+
+                    # Log weighting statistics
+                    if output_dict is None:
+                        output_dict = {}
+                    for key, value in weight_stats.items():
+                        output_dict[f"sample_weight_{key}"] = value
+                else:
+                    loss, output_dict = policy.forward(batch)
+
+                # TODO(rcadene): policy.unnormalize_outputs(out_dict)
+
+            loss_weight = micro_batch_size / total_micro_batch_size
+            total_loss += loss.detach().item() * loss_weight
+
+            # Scale each micro-batch loss so the accumulated gradient matches a larger mean batch.
+            accelerator.backward(loss * loss_weight)
 
     # Clip gradients if specified
     if grad_clip_norm > 0:
@@ -165,7 +195,7 @@ def update_policy(
     if has_method(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), "update"):
         accelerator.unwrap_model(policy, keep_fp32_wrapper=True).update()
 
-    train_metrics.loss = loss.item()
+    train_metrics.loss = total_loss
     train_metrics.grad_norm = grad_norm.item()
     train_metrics.lr = optimizer.param_groups[0]["lr"]
     train_metrics.update_s = time.perf_counter() - start_time
@@ -405,8 +435,13 @@ def train(cfg: TrainPipelineConfig, accelerator: "Accelerator | None" = None):
         logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
         logging.info(f"{dataset.num_episodes=}")
         num_processes = accelerator.num_processes
-        effective_bs = cfg.batch_size * num_processes
-        logging.info(f"Effective batch size: {cfg.batch_size} x {num_processes} = {effective_bs}")
+        per_rank_effective_bs = cfg.batch_size * cfg.gradient_accumulation_steps
+        effective_bs = per_rank_effective_bs * num_processes
+        logging.info(
+            "Effective batch size: "
+            f"{cfg.batch_size} x {cfg.gradient_accumulation_steps} x {num_processes} = {effective_bs} "
+            "(micro batch x grad accumulation x processes)"
+        )
         logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
         logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
 
@@ -433,18 +468,22 @@ def train(cfg: TrainPipelineConfig, accelerator: "Accelerator | None" = None):
             saved_num_processes = load_training_num_processes(cfg.checkpoint_path)
             saved_batch_size = load_training_batch_size(cfg.checkpoint_path)
             ckpt_num_processes = saved_num_processes or accelerator.num_processes
-            ckpt_batch_size = saved_batch_size or cfg.batch_size
+            per_rank_effective_bs = cfg.batch_size * cfg.gradient_accumulation_steps
+            ckpt_batch_size = saved_batch_size or per_rank_effective_bs
             if is_main_process and saved_num_processes not in (None, accelerator.num_processes):
                 logging.warning(
                     f"Resuming with num_processes={accelerator.num_processes} but the checkpoint was "
                     f"written with num_processes={saved_num_processes}. The data order resumes at the "
                     "right epoch/offset, but per-rank sample-exactness requires the same world size."
                 )
-            if is_main_process and saved_batch_size not in (None, cfg.batch_size):
+            if is_main_process and saved_batch_size not in (None, per_rank_effective_bs):
                 logging.warning(
-                    f"Resuming with batch_size={cfg.batch_size} but the checkpoint was written with "
-                    f"batch_size={saved_batch_size}. The data order resumes at the right epoch/offset, "
-                    "but per-rank sample-exactness requires the same batch size."
+                    f"Resuming with per-rank update batch size={per_rank_effective_bs} "
+                    f"(batch_size={cfg.batch_size}, "
+                    f"gradient_accumulation_steps={cfg.gradient_accumulation_steps}) but the checkpoint "
+                    f"was written with per-rank update batch size={saved_batch_size}. The data order "
+                    "resumes at the right epoch/offset, but per-rank sample-exactness requires the same "
+                    "batch size and gradient accumulation settings."
                 )
             sampler_state = compute_sampler_state(step, len(sampler), ckpt_batch_size, ckpt_num_processes)
             sampler.load_state_dict(sampler_state)
@@ -540,9 +579,10 @@ def train(cfg: TrainPipelineConfig, accelerator: "Accelerator | None" = None):
         train_metrics["gpu_mem_gb"] = AverageMeter("mem_gb", ":.2f", reduction="max")
 
     # Keep global batch size for logging; MetricsTracker handles world size internally.
-    effective_batch_size = cfg.batch_size * accelerator.num_processes
+    per_rank_effective_batch_size = cfg.batch_size * cfg.gradient_accumulation_steps
+    effective_batch_size = per_rank_effective_batch_size * accelerator.num_processes
     train_tracker = MetricsTracker(
-        cfg.batch_size,
+        per_rank_effective_batch_size,
         dataset.num_frames,
         dataset.num_episodes,
         train_metrics,
@@ -564,23 +604,29 @@ def train(cfg: TrainPipelineConfig, accelerator: "Accelerator | None" = None):
         )
 
     for _ in range(step, cfg.steps):
-        start_time = time.perf_counter()
-        batch = next(dl_iter)
-        for cam_key in dataset.meta.camera_keys:
-            if cam_key in batch and batch[cam_key].dtype == torch.uint8:
-                batch[cam_key] = batch[cam_key].to(dtype=torch.float32) / 255.0
-        batch = preprocessor(batch)
-        train_tracker.dataloading_s = time.perf_counter() - start_time
+        batches = []
+        dataloading_s = 0.0
+        for _micro_step in range(cfg.gradient_accumulation_steps):
+            start_time = time.perf_counter()
+            batch = next(dl_iter)
+            for cam_key in dataset.meta.camera_keys:
+                if cam_key in batch and batch[cam_key].dtype == torch.uint8:
+                    batch[cam_key] = batch[cam_key].to(dtype=torch.float32) / 255.0
+            batch = preprocessor(batch)
+            dataloading_s += time.perf_counter() - start_time
+            batches.append(batch)
+        train_tracker.dataloading_s = dataloading_s
 
         train_tracker, output_dict = update_policy(
             train_tracker,
             policy,
-            batch,
+            batches,
             optimizer,
             cfg.optimizer.grad_clip_norm,
             accelerator=accelerator,
             lr_scheduler=lr_scheduler,
             sample_weighter=sample_weighter,
+            gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         )
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
@@ -660,7 +706,7 @@ def train(cfg: TrainPipelineConfig, accelerator: "Accelerator | None" = None):
                     preprocessor=preprocessor,
                     postprocessor=postprocessor,
                     num_processes=accelerator.num_processes,
-                    batch_size=cfg.batch_size,
+                    batch_size=per_rank_effective_batch_size,
                     model_state_dict=model_state_dict,
                     optim_state_dict=optim_state_dict,
                 )
@@ -708,7 +754,7 @@ def train(cfg: TrainPipelineConfig, accelerator: "Accelerator | None" = None):
                     "eval_s": AverageMeter("eval_s", ":.3f"),
                 }
                 eval_tracker = MetricsTracker(
-                    cfg.batch_size,
+                    per_rank_effective_batch_size,
                     dataset.num_frames,
                     dataset.num_episodes,
                     eval_metrics,

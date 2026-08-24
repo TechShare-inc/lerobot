@@ -57,8 +57,9 @@ def save_training_step(
 ) -> None:
     state: dict = {"step": step}
     # num_processes and batch_size are recorded so a resumed run can detect a changed world size or
-    # batch size: the sampler's resume offset is computed from the (num_processes, batch_size) that
-    # produced `step`, since both scale how many sampler positions a step consumes (see
+    # per-process update batch size: the sampler's resume offset is computed from the
+    # (num_processes, batch_size) that produced `step`, since both scale how many sampler positions
+    # a step consumes (see
     # compute_sampler_state).
     if num_processes is not None:
         state["num_processes"] = num_processes
@@ -78,7 +79,7 @@ def load_training_num_processes(checkpoint_dir: Path) -> int | None:
 
 
 def load_training_batch_size(checkpoint_dir: Path) -> int | None:
-    """Per-process batch size recorded at checkpoint time, or None for older checkpoints."""
+    """Per-process update batch size recorded at checkpoint time, or None for older checkpoints."""
     return load_json(checkpoint_dir / TRAINING_STATE_DIR / TRAINING_STEP).get("batch_size")
 
 
@@ -130,7 +131,7 @@ def save_checkpoint(
         postprocessor: The postprocessor/pipeline to save. Defaults to None.
         num_processes (int | None, optional): Distributed world size to record for sample-exact
             resume. Defaults to None (not recorded).
-        batch_size (int | None, optional): Per-process batch size to record for sample-exact
+        batch_size (int | None, optional): Per-process update batch size to record for sample-exact
             resume. Defaults to None (not recorded).
         model_state_dict: Pre-gathered full (unsharded) model state dict. Required under FSDP,
             where `policy.state_dict()` would return sharded tensors; the caller gathers it via a
@@ -184,7 +185,7 @@ def save_training_state(
         scheduler (LRScheduler | None, optional): The scheduler from which to save the state_dict.
             Defaults to None.
         num_processes (int | None, optional): Distributed world size to record. Defaults to None.
-        batch_size (int | None, optional): Per-process batch size to record. Defaults to None.
+        batch_size (int | None, optional): Per-process update batch size to record. Defaults to None.
         optim_state_dict: Pre-gathered full optimizer state dict (for FSDP). Saved instead of
             `optimizer.state_dict()` when provided. Defaults to None.
     """
