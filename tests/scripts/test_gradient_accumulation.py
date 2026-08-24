@@ -59,16 +59,20 @@ def test_update_policy_accumulates_micro_batches_before_optimizer_step():
     optimizer = torch.optim.SGD(policy.parameters(), lr=0.1)
     scheduler = StepCountingScheduler()
     accelerator = DummyAccelerator()
+    metric_meters = {
+        "loss": AverageMeter("loss"),
+        "grad_norm": AverageMeter("grdn"),
+        "lr": AverageMeter("lr"),
+        "update_s": AverageMeter("updt_s"),
+    }
+    if torch.cuda.is_available():
+        metric_meters["gpu_mem_gb"] = AverageMeter("mem_gb")
+
     metrics = MetricsTracker(
         batch_size=2,
         num_frames=10,
         num_episodes=1,
-        metrics={
-            "loss": AverageMeter("loss"),
-            "grad_norm": AverageMeter("grdn"),
-            "lr": AverageMeter("lr"),
-            "update_s": AverageMeter("updt_s"),
-        },
+        metrics=metric_meters,
         accelerator=accelerator,
     )
 
