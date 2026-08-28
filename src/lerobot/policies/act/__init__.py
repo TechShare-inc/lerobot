@@ -13,7 +13,17 @@
 # limitations under the License.
 
 from .configuration_act import ACTConfig
+from .configuration_act_force import ACTForceConfig
 from .modeling_act import ACTPolicy
+from .modeling_act_force import ACTForcePolicy
 from .processor_act import make_act_pre_post_processors
+from .processor_act_force import make_act_force_pre_post_processors
 
-__all__ = ["ACTConfig", "ACTPolicy", "make_act_pre_post_processors"]
+__all__ = [
+    "ACTConfig",
+    "ACTForceConfig",
+    "ACTForcePolicy",
+    "ACTPolicy",
+    "make_act_force_pre_post_processors",
+    "make_act_pre_post_processors",
+]

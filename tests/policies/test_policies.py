@@ -45,7 +45,7 @@ from lerobot.policies.factory import (
 from lerobot.policies.pretrained import PreTrainedPolicy
 from lerobot.policies.vqbet.configuration_vqbet import VQBeTConfig
 from lerobot.policies.vqbet.modeling_vqbet import VQBeTHead
-from lerobot.utils.constants import ACTION, OBS_IMAGES, OBS_STATE
+from lerobot.utils.constants import ACTION, OBS_ENV_STATE, OBS_IMAGES, OBS_STATE
 from lerobot.utils.feature_utils import dataset_to_policy_features
 from lerobot.utils.import_utils import is_package_available
 from lerobot.utils.random_utils import seeded_context
@@ -282,6 +282,45 @@ def test_policy_defaults(dummy_dataset_metadata, policy_name: str):
         key: ft for key, ft in features.items() if key not in policy_cfg.output_features
     }
     policy_cls(policy_cfg)
+
+
+def test_act_force_policy_forward_with_force_feature():
+    policy_cls = get_policy_class("act_force")
+    policy_cfg = make_policy_config(
+        "act_force",
+        chunk_size=4,
+        n_action_steps=4,
+        dim_model=32,
+        n_heads=4,
+        dim_feedforward=64,
+        n_encoder_layers=1,
+        n_decoder_layers=1,
+        n_vae_encoder_layers=1,
+        push_to_hub=False,
+        device="cpu",
+    )
+    policy_cfg.input_features = {
+        OBS_STATE: PolicyFeature(type=FeatureType.STATE, shape=(6,)),
+        "observation.force": PolicyFeature(type=FeatureType.STATE, shape=(6,)),
+        OBS_ENV_STATE: PolicyFeature(type=FeatureType.ENV, shape=(3,)),
+    }
+    policy_cfg.output_features = {
+        ACTION: PolicyFeature(type=FeatureType.ACTION, shape=(4,)),
+    }
+
+    policy = policy_cls(policy_cfg)
+    batch = {
+        OBS_STATE: torch.randn(2, 6),
+        "observation.force": torch.randn(2, 6),
+        OBS_ENV_STATE: torch.randn(2, 3),
+        ACTION: torch.randn(2, policy_cfg.chunk_size, 4),
+        "action_is_pad": torch.zeros(2, policy_cfg.chunk_size, dtype=torch.bool),
+    }
+
+    loss, loss_dict = policy.forward(batch)
+
+    assert loss.ndim == 0
+    assert "l1_loss" in loss_dict
 
 
 @pytest.mark.parametrize("policy_name", AVAILABLE_POLICIES)
