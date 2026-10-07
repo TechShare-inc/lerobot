@@ -40,6 +40,23 @@ def test_groot_n1_7_optimizer_matches_isaac_training_contract():
     assert optimizer.eps == pytest.approx(1e-8)
     assert optimizer.weight_decay == pytest.approx(1e-5)
     assert optimizer.grad_clip_norm == pytest.approx(1.0)
+    assert optimizer.foreach is None
+
+
+def test_groot_n1_7_frozen_bf16_disables_adamw_foreach():
+    config = GrootConfig(frozen_params_bf16=True, model_params_fp32=True, use_bf16=True)
+    optimizer_config = config.get_optimizer_preset()
+
+    assert optimizer_config.foreach is False
+    module = torch.nn.Linear(3, 2)
+    optimizer = optimizer_config.build(module.parameters())
+    assert optimizer.defaults["foreach"] is False
+    module(torch.ones(1, 3)).sum().backward()
+    optimizer.step()
+    for parameter in module.parameters():
+        assert parameter.dtype == torch.float32
+        assert optimizer.state[parameter]["exp_avg"].dtype == torch.float32
+        assert optimizer.state[parameter]["exp_avg_sq"].dtype == torch.float32
 
 
 def test_groot_n1_7_sampler_excludes_incomplete_action_tails():

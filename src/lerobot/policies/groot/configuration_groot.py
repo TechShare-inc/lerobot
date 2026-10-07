@@ -490,6 +490,8 @@ class GrootConfig(PreTrainedConfig):
             eps=self.optimizer_eps,
             weight_decay=self.optimizer_weight_decay,
             grad_clip_norm=1.0,
+            # Avoid parameter-sized tensor lists in the low-memory FP32 training mode.
+            foreach=False if self.frozen_params_bf16 else None,
         )
 
     def get_scheduler_preset(self) -> DiffuserSchedulerConfig:
