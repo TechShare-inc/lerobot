@@ -345,6 +345,8 @@ class GrootConfig(PreTrainedConfig):
     use_bf16: bool = True
     # The native N1.7 fine-tuning recipe keeps model parameters in FP32 and computes under BF16 autocast.
     model_params_fp32: bool = True
+    # Keep only frozen parameters in BF16; trainable parameters remain FP32.
+    frozen_params_bf16: bool = False
 
     # TODO(Steven): Remove these deprecated fields in a future release.
     # Deprecated Isaac-GR00T runner / GR00T N1.5 fields, plus the (never-wired) LoRA fields — all
@@ -372,6 +374,9 @@ class GrootConfig(PreTrainedConfig):
     resume: bool = False
 
     def __post_init__(self):
+        if self.frozen_params_bf16 and not (self.model_params_fp32 and self.use_bf16):
+            raise ValueError("frozen_params_bf16 requires model_params_fp32=True and use_bf16=True.")
+
         if self.tokenizer_assets_repo is not None:
             raise ValueError(
                 "Config sets 'tokenizer_assets_repo', which only existed for GR00T N1.5; this looks "

@@ -86,6 +86,42 @@ def test_groot_n1_7_model_parameters_use_fp32_checkpoint_and_optimizer_precision
     assert module.frozen.dtype == torch.float32
 
 
+def test_groot_n1_7_frozen_bf16_is_opt_in():
+    assert GrootConfig().frozen_params_bf16 is False
+    config = GrootConfig(frozen_params_bf16=True, model_params_fp32=True, use_bf16=True)
+    assert config.frozen_params_bf16 is True
+
+
+@pytest.mark.parametrize("model_params_fp32,use_bf16", [(False, True), (True, False), (False, False)])
+def test_groot_n1_7_frozen_bf16_requires_fp32_parameters_and_bf16_compute(model_params_fp32, use_bf16):
+    with pytest.raises(ValueError, match="frozen_params_bf16 requires"):
+        GrootConfig(frozen_params_bf16=True, model_params_fp32=model_params_fp32, use_bf16=use_bf16)
+
+
+def test_groot_n1_7_frozen_bf16_keeps_trainable_parameters_and_optimizer_in_fp32():
+    module = torch.nn.Module()
+    module.trainable = torch.nn.Parameter(torch.ones(3, dtype=torch.bfloat16))
+    module.frozen = torch.nn.Parameter(torch.ones(3, dtype=torch.float32), requires_grad=False)
+    module.register_buffer("buffer", torch.ones(3, dtype=torch.float32))
+    module.integer = torch.nn.Parameter(torch.ones(3, dtype=torch.int64), requires_grad=False)
+
+    GrootPolicy._cast_model_parameters_to_fp32(module, frozen_params_bf16=True)
+
+    assert module.trainable.dtype == torch.float32
+    assert module.trainable.requires_grad is True
+    assert module.frozen.dtype == torch.bfloat16
+    assert module.frozen.requires_grad is False
+    assert module.buffer.dtype == torch.float32
+    assert module.integer.dtype == torch.int64
+
+    optimizer = torch.optim.AdamW([module.trainable], lr=1e-4)
+    module.trainable.sum().backward()
+    assert module.trainable.grad.dtype == torch.float32
+    optimizer.step()
+    assert optimizer.state[module.trainable]["exp_avg"].dtype == torch.float32
+    assert optimizer.state[module.trainable]["exp_avg_sq"].dtype == torch.float32
+
+
 def test_groot_n1_7_ties_unused_qwen_lm_head_to_frozen_input_embeddings():
     class DummyQwen(torch.nn.Module):
         def __init__(self):

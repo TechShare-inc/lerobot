@@ -111,14 +111,15 @@ class GrootPolicy(PreTrainedPolicy):
         if qwen_model is not None:
             _tie_unused_qwen_lm_head(qwen_model)
         if self.config.model_params_fp32:
-            self._cast_model_parameters_to_fp32(model)
+            self._cast_model_parameters_to_fp32(model, frozen_params_bf16=self.config.frozen_params_bf16)
         return model
 
     @staticmethod
-    def _cast_model_parameters_to_fp32(model: torch.nn.Module) -> None:
+    def _cast_model_parameters_to_fp32(model: torch.nn.Module, *, frozen_params_bf16: bool = False) -> None:
         for parameter in model.parameters():
             if parameter.is_floating_point():
-                parameter.data = parameter.data.to(torch.float32)
+                dtype = torch.bfloat16 if frozen_params_bf16 and not parameter.requires_grad else torch.float32
+                parameter.data = parameter.data.to(dtype)
 
     @staticmethod
     def _build_weight_decay_parameter_groups(model: torch.nn.Module) -> list[dict[str, object]]:
